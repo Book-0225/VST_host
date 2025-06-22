@@ -108,3 +108,24 @@ IPCオブジェクトの最終的な名前は、指定された [ベース名] �
 3. 入力オーディオバッファ (Right)
 4. 出力オーディオバッファ (Left)
 5. 出力オーディオバッファ (Right)
+
+## ビルド方法
+
+### 前提条件
+
+- Visual Studio 2022
+- cmake
+- Git
+
+開発者コマンドプロンプト上で
+
+1. ```git clone --recursive https://github.com/Book-0225/VST_host.git```
+2. ```cd VST_host```
+3. ```mkdir vst3sdk_build```
+4. ```cd .\vst3sdk_build\```
+5. ```cmake ..\vst3sdk\```
+6. ```cmake --build . --config Release```
+7. ```cd ..```
+8. ```msbuild /p:Configuration=Release /p:Platform="x64"```
+
+上記の通り実行すると```x64/Release/VSTHost.exe```が生成されるはずです。
