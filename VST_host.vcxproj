@@ -76,8 +76,8 @@
     <LibraryPath>C:\VST_SDK\build\lib\Debug;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>C:\Users\honma\source\repos\VST_host\vst3sdk\vstgui4;C:\Users\honma\source\repos\VST_host\vst3sdk;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\Users\honma\source\repos\VST_host\vst3sdk_build\lib\Release;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(SolutionDir)\vst3sdk\vstgui4;$(SolutionDir)\vst3sdk;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)\vst3sdk_build\lib\Release;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <IncludePath>C:\VST_SDK\VST3_SDK\vstgui4;C:\VST_SDK\VST3_SDK;$(IncludePath)</IncludePath>
