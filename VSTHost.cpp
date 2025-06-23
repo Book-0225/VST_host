@@ -1073,7 +1073,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int)
                 << L"    Sets the base name for the host-done event.\n"
                 << L"    Default: Local\\VstHostDone\n\n"
                 << L"Example:\n"
-                << L"  VstHost.exe -uid 12345 -pipe \"\\\\.\\pipe\\MyVstPipe\"";
+                << L"  VstHost.exe -uid 12345 -pipe \"\\\\.\\pipe\\MyVstPipe\"\n"
+                << L"VST is a trademark of Steinberg Media Technologies GmbH, "
+                << L"registered in Europe and other countries.";
             MessageBoxW(NULL, helpMessage.str().c_str(), L"VstHost Help", MB_OK | MB_ICONINFORMATION);
             DbgPrint(L"%s", helpMessage.str().c_str());
 
