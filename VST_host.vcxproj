@@ -72,8 +72,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <IncludePath>C:\VST_SDK\VST3_SDK;C:\VST_SDK\VST3_SDK\vstgui4;$(IncludePath)</IncludePath>
-    <LibraryPath>C:\VST_SDK\build\lib\Debug;$(LibraryPath)</LibraryPath>
+    <IncludePath>$(SolutionDir)\vst3sdk;$(SolutionDir)\vst3sdk\vstgui4;$(IncludePath)</IncludePath>
+    <LibraryPath>$(SolutionDir)\vst3sdk_build\lib\Debug;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <IncludePath>$(SolutionDir)\vst3sdk\vstgui4;$(SolutionDir)\vst3sdk;$(IncludePath)</IncludePath>

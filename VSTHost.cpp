@@ -586,82 +586,119 @@ void VstHost::ProcessQueuedCommands()
         {
             cmd.pop_back();
         }
-
-        if (cmd.rfind("load_plugin ", 0) == 0)
+        if (cmd.rfind("load_and_set_state ", 0) == 0)
         {
-
-            std::string path;
+            std::string path, state_b64;
             double sr = 44100.0;
             int32 bs = 1024;
 
             try
             {
-                std::string args_str = cmd.substr(12);
-
-                // 1. パスを抽出
-                if (!args_str.empty() && args_str.front() == '"')
-                {
-                    size_t end_quote = args_str.find('"', 1);
-                    if (end_quote != std::string::npos)
-                    {
-                        path = args_str.substr(1, end_quote - 1);
-                        args_str = args_str.substr(end_quote + 1);
-                    }
-                    else
-                    {
-                        path = args_str.substr(1);
-                        args_str.clear();
-                    }
+                std::string args_str = cmd.substr(19);
+                if (args_str.empty() || args_str.front() != '"') {
+                    DbgPrint(_T("Error: Path for load_and_set_state must be quoted. Command: %hs"), cmd.c_str());
+                    continue;
                 }
-                else
-                {
-                    size_t first_space = args_str.find(' ');
-                    if (first_space != std::string::npos)
-                    {
-                        path = args_str.substr(0, first_space);
-                        args_str = args_str.substr(first_space);
-                    }
-                    else
-                    {
-                        path = args_str;
-                        args_str.clear();
-                    }
+                size_t end_quote = args_str.find('"', 1);
+                if (end_quote == std::string::npos) {
+                    DbgPrint(_T("Error: Unmatched quote in path for load_and_set_state. Command: %hs"), cmd.c_str());
+                    continue;
                 }
-
-                // 2. stringstreamでサンプルレートとブロックサイズを安全にパース
-                if (!args_str.empty())
-                {
-                    std::stringstream ss(args_str);
-                    ss >> sr >> bs;
-                    if (ss.fail() && !ss.eof())
-                    {
-                        DbgPrint(_T("Warning: stringstream failed to parse all arguments from '%hs'"), args_str.c_str());
-                    }
+                path = args_str.substr(1, end_quote - 1);
+                std::stringstream ss(args_str.substr(end_quote + 1));
+                ss >> sr >> bs;
+                std::string temp_state;
+                if (ss >> temp_state) {
+                    state_b64 = temp_state;
                 }
             }
             catch (const std::exception& e)
             {
-                // ここで捕捉されたら、引数パース自体が問題
-                DbgPrint(_T("MainThread: Exception during argument parsing for load_plugin: %hs"), e.what());
-                continue; // 次のコマンドへ
+                DbgPrint(_T("Exception during argument parsing for load_and_set_state: %hs"), e.what());
+                continue;
             }
 
             if (!path.empty())
             {
-                DbgPrint(_T("Attempting to load: '%hs', SR: %f, BS: %d"), path.c_str(), sr, bs);
-                try
+                DbgPrint(_T("Executing load_and_set_state: '%hs', SR: %f, BS: %d"), path.c_str(), sr, bs);
+                if (LoadPlugin(path, sr, bs))
                 {
-                    LoadPlugin(path, sr, bs);
+                    if (m_plugProvider && !state_b64.empty())
+                    {
+                        DbgPrint(_T("Restoring state..."));
+                        if (state_b64.rfind("VST3_DUAL:", 0) == 0)
+                        {
+                            auto state_data = base64_decode(state_b64.substr(10));
+                            if (!state_data.empty())
+                            {
+                                MemoryStream stream(state_data.data(), state_data.size());
+                                int32 br; int64 cs = 0, ts = 0;
+                                stream.read(&cs, sizeof(cs), &br);
+                                if (cs > 0 && m_plugProvider->getComponent())
+                                {
+                                    std::vector<BYTE> d(cs);
+                                    stream.read(d.data(), (int32)cs, &br);
+                                    MemoryStream s(d.data(), cs);
+                                    m_plugProvider->getComponent()->setState(&s);
+                                }
+                                stream.read(&ts, sizeof(ts), &br);
+                                if (ts > 0 && m_plugProvider->getController())
+                                {
+                                    std::vector<BYTE> d(ts);
+                                    stream.read(d.data(), (int32)ts, &br);
+                                    MemoryStream s(d.data(), ts);
+                                    m_plugProvider->getController()->setState(&s);
+                                }
+                                DbgPrint(_T("State restored. Restarting component."));
+                                restartComponent(kParamValuesChanged | kReloadComponent);
+                            }
+                            else {
+                                DbgPrint(_T("Warning: State data was empty after base64 decoding."));
+                            }
+                        }
+                        else {
+                            DbgPrint(_T("Warning: State data format is not VST3_DUAL. State starts with: %hs"), state_b64.substr(0, 20).c_str());
+                        }
+                    }
                 }
-                catch (const std::exception& e)
-                {
-                    // ここで捕捉されたら、LoadPlugin関数内が問題
-                    DbgPrint(_T("MainThread: Exception inside LoadPlugin function: %hs"), e.what());
+            }
+        }
+        else if (cmd.rfind("load_plugin ", 0) == 0)
+        {
+            std::string path;
+            double sr = 44100.0;
+            int32 bs = 1024;
+            try
+            {
+                std::string args_str = cmd.substr(12);
+                if (args_str.empty() || args_str.front() != '"') {
+                    DbgPrint(_T("Error: Path for load_plugin must be quoted. Command: %hs"), cmd.c_str());
+                    continue;
                 }
+                size_t end_quote = args_str.find('"', 1);
+                if (end_quote == std::string::npos) {
+                    DbgPrint(_T("Error: Unmatched quote in path for load_plugin. Command: %hs"), cmd.c_str());
+                    continue;
+                }
+                path = args_str.substr(1, end_quote - 1);
+
+                std::stringstream ss(args_str.substr(end_quote + 1));
+                ss >> sr >> bs;
+            }
+            catch (const std::exception& e)
+            {
+                DbgPrint(_T("Exception during argument parsing for load_plugin: %hs"), e.what());
+                continue;
+            }
+            if (!path.empty())
+            {
+                DbgPrint(_T("Executing load_plugin: '%hs', SR: %f, BS: %d"), path.c_str(), sr, bs);
+                LoadPlugin(path, sr, bs);
             }
         }
         else if (cmd.rfind("set_state ", 0) == 0)
         {
+            DbgPrint(_T("Warning: Obsolete 'set_state' command received. Use 'load_and_set_state' instead."));
             if (m_plugProvider && m_plugProvider->getComponent() && m_plugProvider->getController())
             {
                 std::string data = cmd.substr(10);
