@@ -4,6 +4,7 @@
 #include "public.sdk/source/vst/hosting/module.h"
 #include "public.sdk/source/vst/hosting/plugprovider.h"
 #include "public.sdk/source/vst/hosting/hostclasses.h"
+#include "public.sdk/source/vst/hosting/parameterchanges.h"
 #include "pluginterfaces/base/funknown.h"
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
@@ -168,14 +169,10 @@ public:
     uint32 PLUGIN_API release() override;
     tresult PLUGIN_API getName(String128 name) override;
     tresult PLUGIN_API createInstance(TUID cid, TUID iid, void** obj) override;
-    tresult PLUGIN_API beginEdit(ParamID id) override { return kResultOk; }
-    tresult PLUGIN_API performEdit(ParamID id, ParamValue valueNormalized) override { return kResultOk; }
-    tresult PLUGIN_API endEdit(ParamID id) override { return kResultOk; }
-    tresult PLUGIN_API restartComponent(int32 flags) override
-    {
-        DbgPrint(_T("restartComponent(0x%X) called."), flags);
-        return kResultOk;
-    }
+    tresult PLUGIN_API beginEdit(ParamID id) override;
+    tresult PLUGIN_API performEdit(ParamID id, ParamValue valueNormalized) override;
+    tresult PLUGIN_API endEdit(ParamID id) override;
+    tresult PLUGIN_API restartComponent(int32 flags) override;
     tresult PLUGIN_API setDirty(TBool state) override { return kResultOk; }
     tresult PLUGIN_API requestOpenEditor(FIDString name = nullptr) override
     {
@@ -219,6 +216,7 @@ private:
     bool LoadPlugin(const std::string& path, double sampleRate, int32 blockSize);
     void ReleasePlugin();
     void ProcessAudioBlock();
+    void ProcessGuiUpdates();
     std::atomic<uint32> m_refCount;
     uint64_t m_uniqueId;
     HINSTANCE m_hInstance;
@@ -229,6 +227,11 @@ private:
     AudioSharedData* m_pAudioData = nullptr;
     HANDLE m_hEventClientReady = NULL, m_hEventHostDone = NULL;
     std::mutex m_commandMutex, m_syncMutex;
+    std::mutex m_paramMutex;
+    std::mutex m_processorUpdateMutex;
+    std::vector<std::pair<ParamID, ParamValue>> m_processorParamUpdates;
+    static const UINT_PTR IDT_GUI_TIMER = 1;
+    std::vector<std::pair<ParamID, ParamValue>> m_pendingParamChanges;
     std::vector<std::string> m_commandQueue;
     std::condition_variable m_syncCv;
     std::string m_syncCommand, m_syncResult;
@@ -323,6 +326,34 @@ tresult PLUGIN_API VstHost::createInstance(TUID cid, TUID iid, void** obj)
     *obj = nullptr;
     return kNoInterface;
 }
+tresult PLUGIN_API VstHost::beginEdit(ParamID id)
+{
+    return kResultOk;
+}
+
+tresult PLUGIN_API VstHost::performEdit(ParamID id, ParamValue valueNormalized)
+{
+    std::lock_guard<std::mutex> lock(m_paramMutex);
+    for (auto& change : m_pendingParamChanges) {
+        if (change.first == id) {
+            change.second = valueNormalized;
+            return kResultOk;
+        }
+    }
+    m_pendingParamChanges.emplace_back(id, valueNormalized);
+    return kResultOk;
+}
+
+tresult PLUGIN_API VstHost::endEdit(ParamID id)
+{
+    return kResultOk;
+}
+
+tresult PLUGIN_API VstHost::restartComponent(int32 flags)
+{
+    DbgPrint(_T("restartComponent(0x%X) called."), flags);
+    return kResultOk;
+}
 bool VstHost::Initialize()
 {
     if (!InitIPC())
@@ -349,12 +380,21 @@ void VstHost::RunMessageLoop()
     wc.lpszClassName = TEXT("VstHostMsgWindowClass");
     RegisterClass(&wc);
     m_hMainThreadMsgWindow = CreateWindow(wc.lpszClassName, NULL, 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, m_hInstance, this);
+    SetTimer(m_hMainThreadMsgWindow, IDT_GUI_TIMER, 33, nullptr);
     MSG msg;
     m_mainLoopRunning = true;
     while (m_mainLoopRunning && GetMessage(&msg, NULL, 0, 0) > 0)
     {
+        if (m_hGuiWindow && IsDialogMessage(m_hGuiWindow, &msg))
+        {
+            continue;
+        }
         TranslateMessage(&msg);
         DispatchMessage(&msg);
+    }
+    if (m_hGuiWindow)
+    {
+        DestroyWindow(m_hGuiWindow);
     }
 }
 void VstHost::Cleanup()
@@ -479,6 +519,12 @@ LRESULT CALLBACK VstHost::MainThreadMsgWndProc(HWND hWnd, UINT msg, WPARAM wp, L
             return 0;
         case WM_APP:
             h->ProcessQueuedCommands();
+            return 0;
+        case WM_TIMER:
+            if (wp == IDT_GUI_TIMER)
+            {
+                h->ProcessGuiUpdates();
+            }
             return 0;
         }
     }
@@ -866,10 +912,32 @@ void VstHost::ProcessAudioBlock()
 {
     if (!m_isPluginReady || !m_processor || !m_component || !m_pAudioData || m_pAudioData->numSamples <= 0)
         return;
+    ParameterChanges inParamChanges;
+    ParameterChanges outParamChanges;
+    {
+        std::lock_guard<std::mutex> lock(m_paramMutex);
+        if (!m_pendingParamChanges.empty())
+        {
+            IParamValueQueue* paramQueue;
+            int32 numPoints = 1;
+            for (const auto& change : m_pendingParamChanges)
+            {
+                paramQueue = inParamChanges.addParameterData(change.first, numPoints);
+                if (paramQueue)
+                {
+                    int32 pointIndex;
+                    paramQueue->addPoint(0, change.second, pointIndex);
+                }
+            }
+            m_pendingParamChanges.clear();
+        }
+    }
     ProcessData data;
     data.numSamples = m_pAudioData->numSamples;
     data.symbolicSampleSize = kSample32;
 
+    data.inputParameterChanges = &inParamChanges;
+    data.outputParameterChanges = &outParamChanges;
     float* pSharedAudio = (float*)((char*)m_pSharedMem + sizeof(AudioSharedData));
 
     std::vector<AudioBusBuffers> inBuf, outBuf;
@@ -926,6 +994,36 @@ void VstHost::ProcessAudioBlock()
     if (m_processor->process(data) != kResultOk)
     {
         DbgPrint(_T("ProcessAudioBlock: Error."));
+    }
+    int32 numParams = outParamChanges.getParameterCount();
+    for (int32 i = 0; i < numParams; ++i)
+    {
+        IParamValueQueue* queue = outParamChanges.getParameterData(i);
+        if (queue)
+        {
+            ParamID paramId = queue->getParameterId();
+            int32 numPoints = queue->getPointCount();
+            if (numPoints > 0)
+            {
+                ParamValue value;
+                int32 sampleOffset;
+                if (queue->getPoint(numPoints - 1, sampleOffset, value) == kResultTrue)
+                {
+                    std::lock_guard<std::mutex> lock(m_processorUpdateMutex);
+                    bool found = false;
+                    for (auto& update : m_processorParamUpdates) {
+                        if (update.first == paramId) {
+                            update.second = value;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        m_processorParamUpdates.emplace_back(paramId, value);
+                    }
+                }
+            }
+        }
     }
 }
 void VstHost::ShowGui()
@@ -1005,6 +1103,27 @@ void VstHost::OnGuiClose()
         m_plugView.reset();
     }
     m_hGuiWindow = NULL;
+}
+void VstHost::ProcessGuiUpdates()
+{
+    if (!m_controller || !m_hGuiWindow)
+    {
+        return;
+    }
+
+    std::vector<std::pair<ParamID, ParamValue>> updatesToProcess;
+    {
+        std::lock_guard<std::mutex> lock(m_processorUpdateMutex);
+        if (m_processorParamUpdates.empty())
+        {
+            return;
+        }
+        updatesToProcess.swap(m_processorParamUpdates);
+    }
+    for (const auto& update : updatesToProcess)
+    {
+        m_controller->setParamNormalized(update.first, update.second);
+    }
 }
 LRESULT CALLBACK VstHost::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
