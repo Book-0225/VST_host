@@ -14,9 +14,9 @@
 
 ### 実行方法
 
-コマンドプロンプトまたは他のプログラムから、本実行可能ファイル```VstHost.exe```を起動します。その際、必要に応じて後述のコマンドライン引数を指定します。
+コマンドプロンプトまたは他のプログラムから、本実行可能ファイル```VSTHost.exe```を起動します。その際、必要に応じて後述のコマンドライン引数を指定します。
 
-```VstHost.exe [引数]```
+```VSTHost.exe [引数]```
 
 ### 引数
 
@@ -53,13 +53,13 @@ IPCオブジェクトの最終的な名前は、指定された [ベース名] �
 #### 使用例
 
 - デフォルト設定で起動
-```VstHost.exe```
+```VSTHost.exe```
 
 - ユニークIDを '98765' に指定して起動
-```VstHost.exe -uid 98765```
+```VSTHost.exe -uid 98765```
 
 - すべてのIPC名をカスタム設定して起動
-```VstHost.exe -uid 111 -pipe "\\.\pipe\MyPipe" -shm "Local\MyShm"```
+```VSTHost.exe -uid 111 -pipe "\\.\pipe\MyPipe" -shm "Local\MyShm"```
 
 ## 機能
 
