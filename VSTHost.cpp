@@ -9,6 +9,7 @@
 #include "pluginterfaces/vst/ivstaudioprocessor.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstcomponent.h"
+#include "pluginterfaces/vst/ivstprocesscontext.h"
 #include "pluginterfaces/vst/vsttypes.h"
 #include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/base/ustring.h"
@@ -68,7 +69,7 @@ struct AudioSharedData
 const int FLOAT_SIZE = sizeof(float);
 const int BUFFER_BYTES = MAX_BLOCK_SIZE * FLOAT_SIZE;
 const int SHARED_MEM_TOTAL_SIZE = sizeof(AudioSharedData) + (4 * BUFFER_BYTES);
-std::string base64_encode(const BYTE* data, DWORD data_len)
+std::string base64_encode(const BYTE *data, DWORD data_len)
 {
     if (data == nullptr || data_len == 0)
         return "";
@@ -83,7 +84,7 @@ std::string base64_encode(const BYTE* data, DWORD data_len)
     b64_str.resize(b64_len - 1);
     return b64_str;
 }
-std::vector<BYTE> base64_decode(const std::string& b64_str)
+std::vector<BYTE> base64_decode(const std::string &b64_str)
 {
     if (b64_str.empty())
         return {};
@@ -101,7 +102,7 @@ std::vector<BYTE> base64_decode(const std::string& b64_str)
 class WindowController : public IPlugFrame
 {
 public:
-    WindowController(IPlugView* view, HWND parent) : plugView(view), parentWindow(parent), m_refCount(1) {}
+    WindowController(IPlugView *view, HWND parent) : plugView(view), parentWindow(parent), m_refCount(1) {}
     ~WindowController() {}
     void connect()
     {
@@ -113,7 +114,7 @@ public:
         if (plugView)
             plugView->setFrame(nullptr);
     }
-    tresult PLUGIN_API queryInterface(const TUID _iid, void** obj) override
+    tresult PLUGIN_API queryInterface(const TUID _iid, void **obj) override
     {
         if (FUnknownPrivate::iidEqual(_iid, IPlugFrame::iid) || FUnknownPrivate::iidEqual(_iid, FUnknown::iid))
         {
@@ -134,23 +135,27 @@ public:
         }
         return m_refCount;
     }
-    tresult PLUGIN_API resizeView(IPlugView* view, ViewRect* newSize) override
+    tresult PLUGIN_API resizeView(IPlugView *view, ViewRect *newSize) override
     {
         if (view == plugView && newSize && parentWindow)
         {
-            RECT clientRect = { 0, 0, newSize->right - newSize->left, newSize->bottom - newSize->top };
+            RECT clientRect = {0, 0, newSize->right - newSize->left, newSize->bottom - newSize->top};
             DWORD style = GetWindowLong(parentWindow, GWL_STYLE);
             DWORD exStyle = GetWindowLong(parentWindow, GWL_EXSTYLE);
             AdjustWindowRectEx(&clientRect, style, FALSE, exStyle);
             int windowWidth = clientRect.right - clientRect.left;
             int windowHeight = clientRect.bottom - clientRect.top;
             SetWindowPos(parentWindow, NULL, 0, 0, windowWidth, windowHeight, SWP_NOMOVE | SWP_NOZORDER);
+            if (plugView)
+            {
+                plugView->onSize(newSize);
+            }
         }
         return kResultTrue;
     }
 
 private:
-    IPlugView* plugView;
+    IPlugView *plugView;
     HWND parentWindow;
     std::atomic<uint32> m_refCount;
 };
@@ -159,16 +164,16 @@ class VstHost : public IHostApplication, public IComponentHandler, public ICompo
 {
 public:
     VstHost(HINSTANCE hInstance, uint64_t unique_id,
-        const std::wstring& pipeNameBase,
-        const std::wstring& shmNameBase,
-        const std::wstring& eventClientReadyNameBase,
-        const std::wstring& eventHostDoneNameBase);
+            const std::wstring &pipeNameBase,
+            const std::wstring &shmNameBase,
+            const std::wstring &eventClientReadyNameBase,
+            const std::wstring &eventHostDoneNameBase);
     ~VstHost();
-    tresult PLUGIN_API queryInterface(const TUID _iid, void** obj) override;
+    tresult PLUGIN_API queryInterface(const TUID _iid, void **obj) override;
     uint32 PLUGIN_API addRef() override;
     uint32 PLUGIN_API release() override;
     tresult PLUGIN_API getName(String128 name) override;
-    tresult PLUGIN_API createInstance(TUID cid, TUID iid, void** obj) override;
+    tresult PLUGIN_API createInstance(TUID cid, TUID iid, void **obj) override;
     tresult PLUGIN_API beginEdit(ParamID id) override;
     tresult PLUGIN_API performEdit(ParamID id, ParamValue valueNormalized) override;
     tresult PLUGIN_API endEdit(ParamID id) override;
@@ -193,14 +198,14 @@ private:
         HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
         if (SUCCEEDED(hr))
         {
-            ((VstHost*)p)->HandlePipeCommands();
+            ((VstHost *)p)->HandlePipeCommands();
             CoUninitialize();
         }
         return 0;
     }
     static DWORD WINAPI AudioThreadProc(LPVOID p)
     {
-        ((VstHost*)p)->HandleAudioProcessing();
+        ((VstHost *)p)->HandleAudioProcessing();
         return 0;
     }
     static LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -212,8 +217,8 @@ private:
     void HideGui();
     void OnGuiClose();
     bool InitIPC();
-    std::string ProcessCommand(const std::string& full_cmd);
-    bool LoadPlugin(const std::string& path, double sampleRate, int32 blockSize);
+    std::string ProcessCommand(const std::string &full_cmd);
+    bool LoadPlugin(const std::string &path, double sampleRate, int32 blockSize);
     void ReleasePlugin();
     void ProcessAudioBlock();
     void ProcessGuiUpdates();
@@ -223,8 +228,8 @@ private:
     std::atomic<bool> m_mainLoopRunning, m_threadsRunning;
     HANDLE m_hPipeThread = NULL, m_hAudioThread = NULL;
     HANDLE m_hPipe = INVALID_HANDLE_VALUE, m_hShm = NULL;
-    void* m_pSharedMem = nullptr;
-    AudioSharedData* m_pAudioData = nullptr;
+    void *m_pSharedMem = nullptr;
+    AudioSharedData *m_pAudioData = nullptr;
     HANDLE m_hEventClientReady = NULL, m_hEventHostDone = NULL;
     std::mutex m_commandMutex, m_syncMutex;
     std::mutex m_paramMutex;
@@ -237,14 +242,14 @@ private:
     std::string m_syncCommand, m_syncResult;
     bool m_syncSuccess = false;
     Module::Ptr m_module;
-    PlugProvider* m_plugProvider = nullptr;
-    IComponent* m_component = nullptr;
-    IEditController* m_controller = nullptr;
-    IAudioProcessor* m_processor = nullptr;
+    PlugProvider *m_plugProvider = nullptr;
+    IComponent *m_component = nullptr;
+    IEditController *m_controller = nullptr;
+    IAudioProcessor *m_processor = nullptr;
     std::atomic<bool> m_isPluginReady;
     HWND m_hGuiWindow = NULL, m_hMainThreadMsgWindow = NULL;
     FUnknownPtr<IPlugView> m_plugView;
-    WindowController* m_windowController = nullptr;
+    WindowController *m_windowController = nullptr;
     static const UINT WM_APP_SHOW_GUI = WM_APP + 1;
     static const UINT WM_APP_HIDE_GUI = WM_APP + 2;
     std::wstring m_pipeNameBase;
@@ -253,44 +258,44 @@ private:
     std::wstring m_eventHostDoneNameBase;
 };
 
-VstHost* g_pVstHost = nullptr;
+VstHost *g_pVstHost = nullptr;
 VstHost::VstHost(HINSTANCE hInstance, uint64_t unique_id,
-    const std::wstring& pipeNameBase,
-    const std::wstring& shmNameBase,
-    const std::wstring& eventClientReadyNameBase,
-    const std::wstring& eventHostDoneNameBase)
+                 const std::wstring &pipeNameBase,
+                 const std::wstring &shmNameBase,
+                 const std::wstring &eventClientReadyNameBase,
+                 const std::wstring &eventHostDoneNameBase)
     : m_refCount(1), m_uniqueId(unique_id), m_hInstance(hInstance),
-    m_mainLoopRunning(false), m_threadsRunning(false), m_isPluginReady(false),
-    m_pipeNameBase(pipeNameBase),
-    m_shmNameBase(shmNameBase),
-    m_eventClientReadyNameBase(eventClientReadyNameBase),
-    m_eventHostDoneNameBase(eventHostDoneNameBase)
+      m_mainLoopRunning(false), m_threadsRunning(false), m_isPluginReady(false),
+      m_pipeNameBase(pipeNameBase),
+      m_shmNameBase(shmNameBase),
+      m_eventClientReadyNameBase(eventClientReadyNameBase),
+      m_eventHostDoneNameBase(eventHostDoneNameBase)
 {
 }
 VstHost::~VstHost() { Cleanup(); }
-tresult PLUGIN_API VstHost::queryInterface(const TUID _iid, void** obj)
+tresult PLUGIN_API VstHost::queryInterface(const TUID _iid, void **obj)
 {
     if (FUnknownPrivate::iidEqual(_iid, IHostApplication::iid))
     {
-        *obj = static_cast<IHostApplication*>(this);
+        *obj = static_cast<IHostApplication *>(this);
         addRef();
         return kResultOk;
     }
     if (FUnknownPrivate::iidEqual(_iid, IComponentHandler::iid))
     {
-        *obj = static_cast<IComponentHandler*>(this);
+        *obj = static_cast<IComponentHandler *>(this);
         addRef();
         return kResultOk;
     }
     if (FUnknownPrivate::iidEqual(_iid, IComponentHandler2::iid))
     {
-        *obj = static_cast<IComponentHandler2*>(this);
+        *obj = static_cast<IComponentHandler2 *>(this);
         addRef();
         return kResultOk;
     }
     if (FUnknownPrivate::iidEqual(_iid, FUnknown::iid))
     {
-        *obj = static_cast<IHostApplication*>(this);
+        *obj = static_cast<IHostApplication *>(this);
         addRef();
         return kResultOk;
     }
@@ -312,7 +317,7 @@ tresult PLUGIN_API VstHost::getName(String128 name)
     Steinberg::str8ToStr16(name, "VST3 Host Bridge", 128);
     return kResultOk;
 }
-tresult PLUGIN_API VstHost::createInstance(TUID cid, TUID iid, void** obj)
+tresult PLUGIN_API VstHost::createInstance(TUID cid, TUID iid, void **obj)
 {
     FUnknownPtr<IMessage> message;
     if (FUnknownPrivate::iidEqual(cid, IMessage::iid))
@@ -334,8 +339,10 @@ tresult PLUGIN_API VstHost::beginEdit(ParamID id)
 tresult PLUGIN_API VstHost::performEdit(ParamID id, ParamValue valueNormalized)
 {
     std::lock_guard<std::mutex> lock(m_paramMutex);
-    for (auto& change : m_pendingParamChanges) {
-        if (change.first == id) {
+    for (auto &change : m_pendingParamChanges)
+    {
+        if (change.first == id)
+        {
             change.second = valueNormalized;
             return kResultOk;
         }
@@ -497,15 +504,15 @@ void VstHost::HandleAudioProcessing()
 }
 LRESULT CALLBACK VstHost::MainThreadMsgWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    VstHost* h;
+    VstHost *h;
     if (msg == WM_CREATE)
     {
-        h = (VstHost*)((CREATESTRUCT*)lp)->lpCreateParams;
+        h = (VstHost *)((CREATESTRUCT *)lp)->lpCreateParams;
         SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)h);
     }
     else
     {
-        h = (VstHost*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+        h = (VstHost *)GetWindowLongPtr(hWnd, GWLP_USERDATA);
     }
     if (h)
     {
@@ -530,7 +537,7 @@ LRESULT CALLBACK VstHost::MainThreadMsgWndProc(HWND hWnd, UINT msg, WPARAM wp, L
     }
     return DefWindowProc(hWnd, msg, wp, lp);
 }
-std::string VstHost::ProcessCommand(const std::string& full_cmd)
+std::string VstHost::ProcessCommand(const std::string &full_cmd)
 {
     std::string cmd = full_cmd;
     while (!cmd.empty() && isspace(cmd.back()))
@@ -550,7 +557,7 @@ std::string VstHost::ProcessCommand(const std::string& full_cmd)
             if (m_hMainThreadMsgWindow)
                 PostMessage(m_hMainThreadMsgWindow, WM_APP, 0, 0);
             m_syncCv.wait(lock, [this]
-                { return m_syncCommand.empty() || !m_mainLoopRunning; });
+                          { return m_syncCommand.empty() || !m_mainLoopRunning; });
             if (m_mainLoopRunning)
             {
                 success = m_syncSuccess;
@@ -595,7 +602,7 @@ void VstHost::ProcessQueuedCommands()
                         fStream.write(&ts, sizeof(ts), &b);
                         if (ts > 0)
                             fStream.write(tStream.getData(), (int32)ts, &b);
-                        m_syncResult = "VST3_DUAL:" + base64_encode((const BYTE*)fStream.getData(), (DWORD)fStream.getSize());
+                        m_syncResult = "VST3_DUAL:" + base64_encode((const BYTE *)fStream.getData(), (DWORD)fStream.getSize());
                         m_syncSuccess = true;
                     }
                     else
@@ -625,7 +632,7 @@ void VstHost::ProcessQueuedCommands()
         commandsToProcess.swap(m_commandQueue);
     }
 
-    for (const auto& cmd_raw : commandsToProcess)
+    for (const auto &cmd_raw : commandsToProcess)
     {
         std::string cmd = cmd_raw;
         while (!cmd.empty() && isspace((unsigned char)cmd.back()))
@@ -641,12 +648,14 @@ void VstHost::ProcessQueuedCommands()
             try
             {
                 std::string args_str = cmd.substr(19);
-                if (args_str.empty() || args_str.front() != '"') {
+                if (args_str.empty() || args_str.front() != '"')
+                {
                     DbgPrint(_T("Error: Path for load_and_set_state must be quoted. Command: %hs"), cmd.c_str());
                     continue;
                 }
                 size_t end_quote = args_str.find('"', 1);
-                if (end_quote == std::string::npos) {
+                if (end_quote == std::string::npos)
+                {
                     DbgPrint(_T("Error: Unmatched quote in path for load_and_set_state. Command: %hs"), cmd.c_str());
                     continue;
                 }
@@ -654,11 +663,12 @@ void VstHost::ProcessQueuedCommands()
                 std::stringstream ss(args_str.substr(end_quote + 1));
                 ss >> sr >> bs;
                 std::string temp_state;
-                if (ss >> temp_state) {
+                if (ss >> temp_state)
+                {
                     state_b64 = temp_state;
                 }
             }
-            catch (const std::exception& e)
+            catch (const std::exception &e)
             {
                 DbgPrint(_T("Exception during argument parsing for load_and_set_state: %hs"), e.what());
                 continue;
@@ -678,7 +688,8 @@ void VstHost::ProcessQueuedCommands()
                             if (!state_data.empty())
                             {
                                 MemoryStream stream(state_data.data(), state_data.size());
-                                int32 br; int64 cs = 0, ts = 0;
+                                int32 br;
+                                int64 cs = 0, ts = 0;
                                 stream.read(&cs, sizeof(cs), &br);
                                 if (cs > 0 && m_plugProvider->getComponent())
                                 {
@@ -698,11 +709,13 @@ void VstHost::ProcessQueuedCommands()
                                 DbgPrint(_T("State restored. Restarting component."));
                                 restartComponent(kParamValuesChanged | kReloadComponent);
                             }
-                            else {
+                            else
+                            {
                                 DbgPrint(_T("Warning: State data was empty after base64 decoding."));
                             }
                         }
-                        else {
+                        else
+                        {
                             DbgPrint(_T("Warning: State data format is not VST3_DUAL. State starts with: %hs"), state_b64.substr(0, 20).c_str());
                         }
                     }
@@ -717,12 +730,14 @@ void VstHost::ProcessQueuedCommands()
             try
             {
                 std::string args_str = cmd.substr(12);
-                if (args_str.empty() || args_str.front() != '"') {
+                if (args_str.empty() || args_str.front() != '"')
+                {
                     DbgPrint(_T("Error: Path for load_plugin must be quoted. Command: %hs"), cmd.c_str());
                     continue;
                 }
                 size_t end_quote = args_str.find('"', 1);
-                if (end_quote == std::string::npos) {
+                if (end_quote == std::string::npos)
+                {
                     DbgPrint(_T("Error: Unmatched quote in path for load_plugin. Command: %hs"), cmd.c_str());
                     continue;
                 }
@@ -731,7 +746,7 @@ void VstHost::ProcessQueuedCommands()
                 std::stringstream ss(args_str.substr(end_quote + 1));
                 ss >> sr >> bs;
             }
-            catch (const std::exception& e)
+            catch (const std::exception &e)
             {
                 DbgPrint(_T("Exception during argument parsing for load_plugin: %hs"), e.what());
                 continue;
@@ -787,7 +802,7 @@ void VstHost::ProcessQueuedCommands()
         }
     }
 }
-bool VstHost::LoadPlugin(const std::string& path, double sampleRate, int32 blockSize)
+bool VstHost::LoadPlugin(const std::string &path, double sampleRate, int32 blockSize)
 {
     DbgPrint(_T("LoadPlugin (Corrected): Loading plugin on main thread: %hs"), path.c_str());
     ReleasePlugin(); // 以前のプラグインを安全に解放
@@ -801,25 +816,35 @@ bool VstHost::LoadPlugin(const std::string& path, double sampleRate, int32 block
     }
 
     auto factory = m_module->getFactory();
-    ClassInfo audioProcessorClass;
+    ClassInfo targetClass;
     bool found = false;
-    for (auto& classInfo : factory.classInfos())
+    for (auto &classInfo : factory.classInfos())
     {
-        if (classInfo.category() == kVstAudioEffectClass)
+        if (classInfo.category() == "Audio Module Class" ||
+            classInfo.category() == "Instrument Module Class" ||
+            classInfo.category() == "MIDI Module Class")
         {
-            audioProcessorClass = classInfo;
+            targetClass = classInfo;
             found = true;
+            DbgPrint(_T("LoadPlugin: Found plugin class: %hs (Category: %hs)"),
+                     classInfo.name().c_str(), classInfo.category().c_str());
             break;
         }
     }
 
     if (!found)
     {
-        DbgPrint(_T("LoadPlugin (Corrected): No VST3 Audio Module Class found."));
+        DbgPrint(_T("LoadPlugin (Corrected): No compatible VST3 plugin class found."));
+        for (auto &classInfo : factory.classInfos())
+        {
+            DbgPrint(_T("  Available class: %hs (Category: %hs)"),
+                     classInfo.name().c_str(), classInfo.category().c_str());
+        }
         m_module.reset();
         return false;
     }
-    m_plugProvider = new PlugProvider(factory, audioProcessorClass, true);
+
+    m_plugProvider = new PlugProvider(factory, targetClass, true);
     if (!m_plugProvider)
     {
         DbgPrint(_T("LoadPlugin (Corrected): PlugProvider creation failed."));
@@ -835,47 +860,66 @@ bool VstHost::LoadPlugin(const std::string& path, double sampleRate, int32 block
         return false;
     }
     m_controller->setComponentHandler(this);
-    if (m_component->queryInterface(IAudioProcessor::iid, (void**)&m_processor) != kResultOk || !m_processor)
+    if (targetClass.category() != "MIDI Module Class")
     {
-        DbgPrint(_T("LoadPlugin (Corrected): Failed to get IAudioProcessor."));
-        ReleasePlugin();
-        return false;
+        if (m_component->queryInterface(IAudioProcessor::iid, (void **)&m_processor) != kResultOk || !m_processor)
+        {
+            DbgPrint(_T("LoadPlugin (Corrected): Failed to get IAudioProcessor."));
+            ReleasePlugin();
+            return false;
+        }
     }
 
     // --- オーディオ処理のセットアップ ---
-    m_processor->setProcessing(false); // 念のため一旦停止
+    if (m_processor)
+    {
+        m_processor->setProcessing(false); // 念のため一旦停止
 
-    ProcessSetup setup{ kRealtime, kSample32, (int32_t)blockSize, sampleRate };
-    if (m_processor->setupProcessing(setup) != kResultOk)
+        ProcessSetup setup{kRealtime, kSample32, (int32_t)blockSize, sampleRate};
+        if (m_processor->setupProcessing(setup) != kResultOk)
+        {
+            DbgPrint(_T("LoadPlugin (Corrected): setupProcessing failed."));
+            ReleasePlugin();
+            return false;
+        }
+    }
+    if (targetClass.category() != "MIDI Module Class")
     {
-        DbgPrint(_T("LoadPlugin (Corrected): setupProcessing failed."));
+        int32 numIn = m_component->getBusCount(kAudio, kInput);
+        int32 numOut = m_component->getBusCount(kAudio, kOutput);
+        DbgPrint(_T("LoadPlugin: Audio buses - Input: %d, Output: %d"), numIn, numOut);
+        for (int32 i = 0; i < numIn; ++i)
+        {
+            m_component->activateBus(kAudio, kInput, i, true);
+        }
+        for (int32 i = 0; i < numOut; ++i)
+        {
+            m_component->activateBus(kAudio, kOutput, i, true);
+        }
+    }
+
+    tresult result = m_component->setActive(true);
+    if (result != kResultOk)
+    {
+        DbgPrint(_T("LoadPlugin (Corrected): setActive(true) failed. Result: 0x%X"), result);
         ReleasePlugin();
         return false;
     }
-    int32 numIn = m_component->getBusCount(kAudio, kInput);
-    int32 numOut = m_component->getBusCount(kAudio, kOutput);
-    if (numIn > 0)
-        m_component->activateBus(kAudio, kInput, 0, true);
-    if (numOut > 0)
-        m_component->activateBus(kAudio, kOutput, 0, true);
-    if (m_component->setActive(true) != kResultOk)
+
+    if (m_processor)
     {
-        DbgPrint(_T("LoadPlugin (Corrected): setActive(true) failed."));
-        ReleasePlugin();
-        return false;
-    }
-    if (m_processor->setProcessing(true) != kResultOk)
-    {
-        DbgPrint(_T("LoadPlugin (Corrected): setProcessing(true) failed."));
-        ReleasePlugin();
-        return false;
+        result = m_processor->setProcessing(true);
+        if (result != kResultOk)
+        {
+            DbgPrint(_T("LoadPlugin (Corrected): setProcessing(true) failed. Result: 0x%X. Continuing..."), result);
+        }
     }
 
     m_isPluginReady = true;
 
     String128 name;
-    Steinberg::str8ToStr16(name, audioProcessorClass.name().c_str(), 128);
-    DbgPrint(_T("LoadPlugin (Corrected): Plugin loaded and setup: %s. Ready for processing."), (wchar_t*)name);
+    Steinberg::str8ToStr16(name, targetClass.name().c_str(), 128);
+    DbgPrint(_T("LoadPlugin (Corrected): Plugin loaded and setup: %s. Ready for processing."), (wchar_t *)name);
     return true;
 }
 void VstHost::ReleasePlugin()
@@ -910,17 +954,23 @@ void VstHost::ReleasePlugin()
 
 void VstHost::ProcessAudioBlock()
 {
-    if (!m_isPluginReady || !m_processor || !m_component || !m_pAudioData || m_pAudioData->numSamples <= 0)
+    if (!m_isPluginReady || !m_component || !m_pAudioData || m_pAudioData->numSamples <= 0)
         return;
+    if (!m_processor)
+    {
+        DbgPrint(_T("ProcessAudioBlock: Skipping audio processing (no processor available)."));
+        return;
+    }
+
     ParameterChanges inParamChanges;
     ParameterChanges outParamChanges;
     {
         std::lock_guard<std::mutex> lock(m_paramMutex);
         if (!m_pendingParamChanges.empty())
         {
-            IParamValueQueue* paramQueue;
+            IParamValueQueue *paramQueue;
             int32 numPoints = 1;
-            for (const auto& change : m_pendingParamChanges)
+            for (const auto &change : m_pendingParamChanges)
             {
                 paramQueue = inParamChanges.addParameterData(change.first, numPoints);
                 if (paramQueue)
@@ -932,16 +982,20 @@ void VstHost::ProcessAudioBlock()
             m_pendingParamChanges.clear();
         }
     }
-    ProcessData data;
+    ProcessData data = {};
     data.numSamples = m_pAudioData->numSamples;
     data.symbolicSampleSize = kSample32;
 
     data.inputParameterChanges = &inParamChanges;
     data.outputParameterChanges = &outParamChanges;
-    float* pSharedAudio = (float*)((char*)m_pSharedMem + sizeof(AudioSharedData));
+    ProcessContext processContext = {};
+    processContext.state = ProcessContext::StatesAndFlags::kPlaying;
+    processContext.sampleRate = m_pAudioData->sampleRate;
+    data.processContext = &processContext;
+    float *pSharedAudio = (float *)((char *)m_pSharedMem + sizeof(AudioSharedData));
 
     std::vector<AudioBusBuffers> inBuf, outBuf;
-    std::vector<std::vector<float*>> inPtrs, outPtrs;
+    std::vector<std::vector<float *>> inPtrs, outPtrs;
 
     int32 numIn = m_component->getBusCount(kAudio, kInput);
     int32 numOut = m_component->getBusCount(kAudio, kOutput);
@@ -991,14 +1045,22 @@ void VstHost::ProcessAudioBlock()
         }
         data.outputs = outBuf.data();
     }
-    if (m_processor->process(data) != kResultOk)
+    if (m_processor)
     {
-        DbgPrint(_T("ProcessAudioBlock: Error."));
+        if (m_processor->process(data) != kResultOk)
+        {
+            DbgPrint(_T("ProcessAudioBlock: Error in process method."));
+        }
     }
+    else
+    {
+        DbgPrint(_T("ProcessAudioBlock: Skipping process call (no processor available)."));
+    }
+
     int32 numParams = outParamChanges.getParameterCount();
     for (int32 i = 0; i < numParams; ++i)
     {
-        IParamValueQueue* queue = outParamChanges.getParameterData(i);
+        IParamValueQueue *queue = outParamChanges.getParameterData(i);
         if (queue)
         {
             ParamID paramId = queue->getParameterId();
@@ -1011,14 +1073,17 @@ void VstHost::ProcessAudioBlock()
                 {
                     std::lock_guard<std::mutex> lock(m_processorUpdateMutex);
                     bool found = false;
-                    for (auto& update : m_processorParamUpdates) {
-                        if (update.first == paramId) {
+                    for (auto &update : m_processorParamUpdates)
+                    {
+                        if (update.first == paramId)
+                        {
                             update.second = value;
                             found = true;
                             break;
                         }
                     }
-                    if (!found) {
+                    if (!found)
+                    {
                         m_processorParamUpdates.emplace_back(paramId, value);
                     }
                 }
@@ -1033,7 +1098,7 @@ void VstHost::ShowGui()
         DbgPrint(_T("ShowGui: Plugin not loaded."));
         return;
     }
-    IEditController* controller = m_plugProvider->getController();
+    IEditController *controller = m_plugProvider->getController();
     if (!controller)
     {
         DbgPrint(_T("ShowGui: Controller not available."));
@@ -1054,9 +1119,9 @@ void VstHost::ShowGui()
     ViewRect sz;
     if (m_plugView->getSize(&sz) != kResultOk)
     {
-        sz = { 0, 0, 800, 600 };
+        sz = {0, 0, 800, 600};
     }
-    RECT wr = { 0, 0, sz.right - sz.left, sz.bottom - sz.top };
+    RECT wr = {0, 0, sz.right - sz.left, sz.bottom - sz.top};
     AdjustWindowRectEx(&wr, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_APPWINDOW);
     WNDCLASS wc = {};
     wc.lpfnWndProc = VstHost::WndProc;
@@ -1120,22 +1185,22 @@ void VstHost::ProcessGuiUpdates()
         }
         updatesToProcess.swap(m_processorParamUpdates);
     }
-    for (const auto& update : updatesToProcess)
+    for (const auto &update : updatesToProcess)
     {
         m_controller->setParamNormalized(update.first, update.second);
     }
 }
 LRESULT CALLBACK VstHost::WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    VstHost* h;
+    VstHost *h;
     if (msg == WM_CREATE)
     {
-        h = (VstHost*)((CREATESTRUCT*)lp)->lpCreateParams;
+        h = (VstHost *)((CREATESTRUCT *)lp)->lpCreateParams;
         SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)h);
     }
     else
     {
-        h = (VstHost*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+        h = (VstHost *)GetWindowLongPtr(hWnd, GWLP_USERDATA);
     }
     if (h)
     {
@@ -1173,7 +1238,7 @@ bool VstHost::InitIPC()
     m_pSharedMem = MapViewOfFile(m_hShm, FILE_MAP_ALL_ACCESS, 0, 0, SHARED_MEM_TOTAL_SIZE);
     if (!m_pSharedMem)
         return false;
-    m_pAudioData = (AudioSharedData*)m_pSharedMem;
+    m_pAudioData = (AudioSharedData *)m_pSharedMem;
     m_hEventClientReady = CreateEvent(NULL, TRUE, FALSE, er);
     m_hEventHostDone = CreateEvent(NULL, FALSE, FALSE, ed);
     if (!m_hEventClientReady || !m_hEventHostDone)
@@ -1184,7 +1249,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int)
 {
 #ifdef _DEBUG
     AllocConsole();
-    FILE* c;
+    FILE *c;
     freopen_s(&c, "CONOUT$", "w", stdout);
     freopen_s(&c, "CONOUT$", "w", stderr);
 #endif
@@ -1195,7 +1260,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int)
 
     // --- コマンドライン引数の解析 ---
     int argc = 0;
-    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     if (!argv)
     {
         MessageBox(NULL, L"Fatal Error: Failed to parse command line.", L"VstHost Error", MB_ICONERROR | MB_OK);
@@ -1208,43 +1273,43 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int)
         {
             std::wstringstream helpMessage;
             helpMessage << L"VST3 Host Bridge Application\n\n"
-                << L"Usage:\n"
-                << L"  VstHost.exe [options]\n\n"
-                << L"Options:\n"
-                << L"  -h, --help\n"
-                << L"    Displays this help message and exits.\n\n"
-                << L"  -uid <ID>\n"
-                << L"    Specifies a unique 64-bit integer ID for this instance.\n"
-                << L"    Default: Current Process ID\n\n"
-                << L"  -pipe <base_name>\n"
-                << L"    Sets the base name for the named pipe.\n"
-                << L"    Default: \\\\.\\pipe\\VstBridge\n\n"
-                << L"  -shm <base_name>\n"
-                << L"    Sets the base name for the shared memory.\n"
-                << L"    Default: Local\\VstSharedAudio\n\n"
-                << L"  -event_ready <base_name>\n"
-                << L"    Sets the base name for the client-ready event.\n"
-                << L"    Default: Local\\VstClientReady\n\n"
-                << L"  -event_done <base_name>\n"
-                << L"    Sets the base name for the host-done event.\n"
-                << L"    Default: Local\\VstHostDone\n\n"
-                << L"Example:\n"
-                << L"  VstHost.exe -uid 12345 -pipe \"\\\\.\\pipe\\MyVstPipe\"\n"
-                << L"VST is a trademark of Steinberg Media Technologies GmbH, "
-                << L"registered in Europe and other countries.";
+                        << L"Usage:\n"
+                        << L"  VstHost.exe [options]\n\n"
+                        << L"Options:\n"
+                        << L"  -h, --help\n"
+                        << L"    Displays this help message and exits.\n\n"
+                        << L"  -uid <ID>\n"
+                        << L"    Specifies a unique 64-bit integer ID for this instance.\n"
+                        << L"    Default: Current Process ID\n\n"
+                        << L"  -pipe <base_name>\n"
+                        << L"    Sets the base name for the named pipe.\n"
+                        << L"    Default: \\\\.\\pipe\\VstBridge\n\n"
+                        << L"  -shm <base_name>\n"
+                        << L"    Sets the base name for the shared memory.\n"
+                        << L"    Default: Local\\VstSharedAudio\n\n"
+                        << L"  -event_ready <base_name>\n"
+                        << L"    Sets the base name for the client-ready event.\n"
+                        << L"    Default: Local\\VstClientReady\n\n"
+                        << L"  -event_done <base_name>\n"
+                        << L"    Sets the base name for the host-done event.\n"
+                        << L"    Default: Local\\VstHostDone\n\n"
+                        << L"Example:\n"
+                        << L"  VstHost.exe -uid 12345 -pipe \"\\\\.\\pipe\\MyVstPipe\"\n"
+                        << L"VST is a trademark of Steinberg Media Technologies GmbH, "
+                        << L"registered in Europe and other countries.";
             MessageBoxW(NULL, helpMessage.str().c_str(), L"VstHost Help", MB_OK | MB_ICONINFORMATION);
             DbgPrint(L"%s", helpMessage.str().c_str());
 
             LocalFree(argv);
             CoUninitialize();
 #ifdef _DEBUG
-            if (c) fclose(c);
+            if (c)
+                fclose(c);
             FreeConsole();
 #endif
             return 0;
         }
     }
-
 
     // デフォルト値
     uint64_t uid = GetCurrentProcessId();
@@ -1259,8 +1324,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int)
         std::wstring arg = argv[i];
         if ((arg == L"-uid") && i + 1 < argc)
         {
-            try { uid = std::stoull(argv[++i]); }
-            catch (const std::exception& e) {
+            try
+            {
+                uid = std::stoull(argv[++i]);
+            }
+            catch (const std::exception &e)
+            {
                 DbgPrint(_T("Failed to parse UID from '%s'. Error: %hs"), argv[i], e.what());
             }
         }
@@ -1285,7 +1354,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int)
     LocalFree(argv);
     g_pVstHost = new VstHost(hInstance, uid, pipeNameBase, shmNameBase, eventClientReadyNameBase, eventHostDoneNameBase);
 
-    PluginContextFactory::instance().setPluginContext(static_cast<IHostApplication*>(g_pVstHost));
+    PluginContextFactory::instance().setPluginContext(static_cast<IHostApplication *>(g_pVstHost));
     if (g_pVstHost->Initialize())
     {
         g_pVstHost->RunMessageLoop();
