@@ -1,4 +1,5 @@
 ﻿#define _CRT_SECURE_NO_WARNINGS
+#define VERSION_STRING "v0.1.1"
 
 // --- VST SDK Headers ---
 #include "public.sdk/source/vst/hosting/module.h"
@@ -1272,12 +1273,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int)
         if (arg == L"--help" || arg == L"-h")
         {
             std::wstringstream helpMessage;
-            helpMessage << L"VST3 Host Bridge Application\n\n"
+            helpMessage << L"VST3 Host Bridge Application " << VERSION_STRING << L"\n\n"
                         << L"Usage:\n"
                         << L"  VstHost.exe [options]\n\n"
                         << L"Options:\n"
                         << L"  -h, --help\n"
                         << L"    Displays this help message and exits.\n\n"
+                        << L"  -v, --version\n"
+                        << L"    Displays version information and exits.\n\n"
                         << L"  -uid <ID>\n"
                         << L"    Specifies a unique 64-bit integer ID for this instance.\n"
                         << L"    Default: Current Process ID\n\n"
@@ -1299,6 +1302,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int)
                         << L"registered in Europe and other countries.";
             MessageBoxW(NULL, helpMessage.str().c_str(), L"VstHost Help", MB_OK | MB_ICONINFORMATION);
             DbgPrint(L"%s", helpMessage.str().c_str());
+
+            LocalFree(argv);
+            CoUninitialize();
+#ifdef _DEBUG
+            if (c)
+                fclose(c);
+            FreeConsole();
+#endif
+            return 0;
+        }
+        else if (arg == L"--version" || arg == L"-v")
+        {
+            std::wstringstream versionMessage;
+            versionMessage << L"VST3 Host Bridge " << VERSION_STRING;
+            MessageBoxW(NULL, versionMessage.str().c_str(), L"VstHost Version", MB_OK | MB_ICONINFORMATION);
+            DbgPrint(L"%s", versionMessage.str().c_str());
 
             LocalFree(argv);
             CoUninitialize();
